@@ -1,9 +1,7 @@
-module.exports = function(RED)
-{
-	"use strict";
+module.exports = function (RED) {
+	'use strict';
 
-	function HueRules(config)
-	{
+	function HueRules(config) {
 		RED.nodes.createNode(this, config);
 
 		const scope = this;
@@ -15,54 +13,43 @@ module.exports = function(RED)
 
 		//
 		// CHECK CONFIG
-		if(bridge == null)
-		{
-			this.status({fill: "red", shape: "ring", text: "hue-rules.node.no-rule"});
+		if (bridge == null) {
+			this.status({ fill: 'red', shape: 'ring', text: 'hue-rules.node.no-rule' });
 			return false;
 		}
 
 		//
 		// UNIVERSAL MODE?
-		if(!config.ruleid)
-		{
-			this.status({fill: "grey", shape: "dot", text: "hue-rules.node.universal"});
+		if (!config.ruleid) {
+			this.status({ fill: 'grey', shape: 'dot', text: 'hue-rules.node.universal' });
 		}
 
 		//
 		// UPDATE STATE
-		if(typeof bridge.disableupdates != 'undefined' || bridge.disableupdates == false)
-		{
-			this.status({fill: "grey", shape: "dot", text: "hue-rules.node.init"});
+		if (typeof bridge.disableupdates != 'undefined' || bridge.disableupdates == false) {
+			this.status({ fill: 'grey', shape: 'dot', text: 'hue-rules.node.init' });
 		}
 
 		//
 		// SUBSCRIBE TO UPDATES FROM THE BRIDGE
-		bridge.subscribe("rule", config.ruleid, function(info)
-		{
-			let currentState = bridge.get("rule", info.id);
+		bridge.subscribe('rule', config.ruleid, function (info) {
+			let currentState = bridge.get('rule', info.id);
 
 			// RESOURCE FOUND?
-			if(currentState !== false)
-			{
+			if (currentState !== false) {
 				// NOT IN UNIVERAL MODE? -> CHANGE UI STATES
-				if(config.ruleid)
-				{
-					if(currentState.payload.enabled == true)
-					{
-						scope.status({fill: "green", shape: "dot", text: "hue-rules.node.enabled"});
-					}
-					else
-					{
-						scope.status({fill: "red", shape: "ring", text: "hue-rules.node.disabled"});
+				if (config.ruleid) {
+					if (currentState.payload.enabled == true) {
+						scope.status({ fill: 'green', shape: 'dot', text: 'hue-rules.node.enabled' });
+					} else {
+						scope.status({ fill: 'red', shape: 'ring', text: 'hue-rules.node.disabled' });
 					}
 				}
 
 				// SEND MESSAGE
-				if(!config.skipevents && (config.initevents || info.suppressMessage == false))
-				{
+				if (!config.skipevents && (config.initevents || info.suppressMessage == false)) {
 					// SET LAST COMMAND
-					if(scope.lastCommand !== null)
-					{
+					if (scope.lastCommand !== null) {
 						currentState.command = scope.lastCommand;
 					}
 
@@ -75,14 +62,21 @@ module.exports = function(RED)
 			}
 		});
 
-
 		//
 		// DISABLE / ENABLE RULE
-		this.on('input', function(msg, send, done)
-		{
+		this.on('input', function (msg, send, done) {
 			// REDEFINE SEND AND DONE IF NOT AVAILABLE
-			send = send || function() { scope.send.apply(scope,arguments); }
-			done = done || function() { scope.done.apply(scope,arguments); }
+			// eslint-disable-next-line no-unused-vars
+			send =
+				send ||
+				function () {
+					scope.send.apply(scope, arguments);
+				};
+			done =
+				done ||
+				function () {
+					scope.done.apply(scope, arguments);
+				};
 
 			// SAVE LAST COMMAND
 			scope.lastCommand = RED.util.cloneMessage(msg);
@@ -91,57 +85,63 @@ module.exports = function(RED)
 			let patchObject = {};
 
 			// DEFINE SENSOR ID & CURRENT STATE
-			const tempRuleID = (!config.ruleid && typeof msg.topic != 'undefined' && isNaN(msg.topic) == false) ? msg.topic : config.ruleid;
-			if(!tempRuleID)
-			{
-				scope.error("Please submit a valid rule ID.");
+			const tempRuleID = !config.ruleid && typeof msg.topic != 'undefined' && isNaN(msg.topic) == false ? msg.topic : config.ruleid;
+			if (!tempRuleID) {
+				scope.error('Please submit a valid rule ID.');
 				return false;
 			}
 
-			let currentState = bridge.get("rule", "rule_" + tempRuleID);
-			if(!currentState)
-			{
-				scope.error("The rule in not yet available. Please wait until HueMagic has established a connection with the bridge or check whether the resource ID in the configuration is valid.");
+			let currentState = bridge.get('rule', 'rule_' + tempRuleID);
+			if (!currentState) {
+				scope.error(
+					'The rule in not yet available. Please wait until HueMagic has established a connection with the bridge or check whether the resource ID in the configuration is valid.'
+				);
 				return false;
 			}
 
 			// CONTROL RULE
-			if(msg.payload === true || msg.payload === false)
-			{
-				if(msg.payload === currentState.payload.enabled) { return false; }
-				patchObject["status"] = (msg.payload == true) ? 'enabled' : 'disabled';
+			if (msg.payload === true || msg.payload === false) {
+				if (msg.payload === currentState.payload.enabled) {
+					return false;
+				}
+				patchObject['status'] = msg.payload == true ? 'enabled' : 'disabled';
 
 				// PATCH!
-				async.retry({
-					times: 3,
-					errorFilter: function(err) {
-						return (err.status == 503);
+				async.retry(
+					{
+						times: 3,
+						errorFilter: function (err) {
+							return err.status == 503;
+						},
+						interval: function (retryCount) {
+							return retryCount * 2000;
+						},
 					},
-					interval: function(retryCount) { return retryCount*2000; }
-				},
-				function(callback, results)
-				{
-					bridge.patch("rules", "/rules/"+tempRuleID, patchObject, 1)
-					.then(function(response) { bridge.refetchRule(tempRuleID); callback(null, true); })
-					.catch(function(errors) { callback(errors, null); });
-				},
-				function(errors, success)
-				{
-					if(errors)
-					{
-						scope.error(errors);
+					// eslint-disable-next-line no-unused-vars
+					function (callback, results) {
+						bridge
+							.patch('rules', '/rules/' + tempRuleID, patchObject, 1)
+							// eslint-disable-next-line no-unused-vars
+							.then(function (response) {
+								bridge.refetchRule(tempRuleID);
+								callback(null, true);
+							})
+							.catch(function (errors) {
+								callback(errors, null);
+							});
+					},
+					// eslint-disable-next-line no-unused-vars
+					function (errors, success) {
+						if (errors) {
+							scope.error(errors);
+						} else if (done) {
+							done();
+						}
 					}
-					else if(done)
-					{
-						done();
-					}
-				});
-			}
-			else
-			{
+				);
+			} else {
 				// SET LAST COMMAND
-				if(scope.lastCommand !== null)
-				{
+				if (scope.lastCommand !== null) {
 					currentState.command = scope.lastCommand;
 				}
 
@@ -151,10 +151,12 @@ module.exports = function(RED)
 				// RESET LAST COMMAND
 				scope.lastCommand = null;
 
-				if(done) {done();}
+				if (done) {
+					done();
+				}
 			}
 		});
 	}
 
-	RED.nodes.registerType("hue-rules", HueRules);
-}
+	RED.nodes.registerType('hue-rules', HueRules);
+};
